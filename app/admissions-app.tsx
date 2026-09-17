@@ -1,0 +1,102 @@
+"use client";
+
+import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { ArrowRight, Bot, BookOpen, CalendarDays, Check, GraduationCap, LayoutDashboard, Menu, MessageCircle, Phone, Send, UploadCloud, Users, X } from "lucide-react";
+import { courses, programmeLevels } from "./data";
+
+type View = "chat" | "courses" | "book" | "dashboard";
+type Message = { role: "assistant" | "user"; content: string; courses?: string[] };
+type Lead = { id: number; name: string; phone: string; email: string; interest: string; status: string };
+type Booking = { id: number; name: string; phone: string; course: string; preferredDate: string; status: string };
+
+const starters = ["Which course is right for me?", "Show fees and duration", "I want to learn AI", "Book a counselling session"];
+
+export function AdmissionsApp() {
+  const [view, setView] = useState<View>("chat");
+  const [menu, setMenu] = useState(false);
+  const [leadOpen, setLeadOpen] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: "Hello! I’m Nia, GIIT Africa’s admissions assistant. Tell me about the career you want, the skills you already have, or the course you’re considering." }]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+
+  function flash(text: string) { setNotice(text); setTimeout(() => setNotice(""), 4200); }
+  async function send(text = input) {
+    const message = text.trim();
+    if (!message || busy) return;
+    setMessages((old) => [...old, { role: "user", content: message }]); setInput(""); setBusy(true);
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message }) });
+      const data = await response.json();
+      setMessages((old) => [...old, { role: "assistant", content: data.reply, courses: data.courses }]);
+      if (data.openBooking) setView("book");
+      if (data.captureLead) setLeadOpen(true);
+    } catch { setMessages((old) => [...old, { role: "assistant", content: "I’m temporarily unavailable. Please call 09019776416 or try again shortly." }]); }
+    finally { setBusy(false); }
+  }
+  async function loadDashboard() {
+    const [a, b] = await Promise.all([fetch("/api/leads"), fetch("/api/bookings")]);
+    if (a.ok) setLeads((await a.json()).leads ?? []);
+    if (b.ok) setBookings((await b.json()).bookings ?? []);
+  }
+  useEffect(() => { if (view === "dashboard") void loadDashboard(); }, [view]);
+  useEffect(() => {
+    const context = (document as Document & { modelContext?: { registerTool: (tool: unknown, options?: { signal?: AbortSignal }) => void | Promise<void> } }).modelContext;
+    if (!context?.registerTool) return;
+    const lifecycle = new AbortController();
+    void Promise.resolve(context.registerTool({ name: "ask_giit_admissions", title: "Ask GIIT Admissions", description: "Ask GIIT Africa's admissions assistant about courses, fees, duration or career fit and show the answer in the visible chat.", inputSchema: { type: "object", properties: { question: { type: "string" } }, required: ["question"], additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute: async (value: unknown) => { const question = (value as { question?: string }).question?.trim(); if (!question) throw new Error("question is required"); setView("chat"); await send(question); return { status: "answered", question }; } }, { signal: lifecycle.signal }));
+    void Promise.resolve(context.registerTool({ name: "start_giit_counselling_booking", title: "Start GIIT Counselling Booking", description: "Open the visible GIIT Africa counselling request form. This does not create a booking until the user submits the form.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute: async () => { setView("book"); return { status: "booking_form_opened" }; } }, { signal: lifecycle.signal }));
+    return () => lifecycle.abort();
+  }, []);
+
+  return <main className="min-h-screen bg-[#f5f8fb] text-[#10243d]">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div className="mx-auto flex h-[76px] max-w-[1440px] items-center justify-between px-5 lg:px-9">
+        <button onClick={() => setView("chat")} className="flex items-center gap-3 text-left"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0c3f8f] text-lg font-black text-white">G</span><span><strong className="block text-[17px] leading-5">GIIT AFRICA</strong><small className="text-[12px] font-bold uppercase tracking-[.14em] text-[#f07822]">AI Admissions</small></span></button>
+        <nav className="hidden items-center gap-1 md:flex"><Nav active={view === "chat"} onClick={() => setView("chat")} icon={<MessageCircle size={17} />} label="Ask Nia" /><Nav active={view === "courses"} onClick={() => setView("courses")} icon={<BookOpen size={17} />} label="Courses" /><Nav active={view === "book"} onClick={() => setView("book")} icon={<CalendarDays size={17} />} label="Book counselling" /><Nav active={view === "dashboard"} onClick={() => setView("dashboard")} icon={<LayoutDashboard size={17} />} label="Dashboard" /></nav>
+        <div className="flex gap-2"><a className="hidden rounded-xl bg-[#f07822] px-4 py-2.5 text-sm font-bold text-white sm:inline-flex" href="https://wa.me/2349019776416?text=Hello%20GIIT%20Africa%2C%20I%20need%20help%20choosing%20a%20course" target="_blank" rel="noreferrer">WhatsApp us</a><button className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 md:hidden" onClick={() => setMenu(!menu)}>{menu ? <X /> : <Menu />}</button></div>
+      </div>
+      {menu && <div className="grid gap-1 border-t bg-white p-3 md:hidden">{(["chat", "courses", "book", "dashboard"] as View[]).map((v) => <button key={v} onClick={() => { setView(v); setMenu(false); }} className="rounded-xl px-4 py-3 text-left font-bold capitalize hover:bg-slate-50">{v === "chat" ? "Ask Nia" : v === "book" ? "Book counselling" : v}</button>)}</div>}
+    </header>
+    {notice && <div className="fixed right-5 top-24 z-50 flex max-w-sm items-center gap-2 rounded-2xl bg-[#12355a] px-4 py-3 text-sm font-bold text-white shadow-xl"><Check size={18} className="text-emerald-300" />{notice}</div>}
+    {view === "chat" && <Chat messages={messages} input={input} setInput={setInput} send={send} busy={busy} onLead={() => setLeadOpen(true)} />}
+    {view === "courses" && <Courses onAsk={(course) => { setView("chat"); setTimeout(() => void send(`Tell me if ${course} is right for me`), 0); }} />}
+    {view === "book" && <BookingForm flash={flash} onDone={() => setView("chat")} />}
+    {view === "dashboard" && <Dashboard leads={leads} bookings={bookings} reload={loadDashboard} flash={flash} />}
+    {leadOpen && <LeadModal close={() => setLeadOpen(false)} flash={flash} />}
+  </main>;
+}
+
+function Nav({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) { return <button onClick={onClick} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ${active ? "bg-blue-50 text-[#0c3f8f]" : "text-slate-600 hover:bg-slate-50"}`}>{icon}{label}</button>; }
+
+function Chat({ messages, input, setInput, send, busy, onLead }: { messages: Message[]; input: string; setInput: (v: string) => void; send: (v?: string) => void; busy: boolean; onLead: () => void }) {
+  return <section className="mx-auto grid min-h-[calc(100vh-76px)] max-w-[1440px] lg:grid-cols-[320px_1fr]">
+    <aside className="hidden bg-[#0b2f5b] p-7 text-white lg:block"><p className="text-xs font-bold uppercase tracking-[.18em] text-[#ffad6b]">Your next career move</p><h1 className="mt-3 text-3xl font-black leading-tight">Find the right tech path in minutes.</h1><p className="mt-4 leading-7 text-blue-100">Get guidance based on your goals—not guesswork.</p><div className="mt-8 space-y-3">{["Personal course guidance", "Clear fees and duration", "Counselling appointment", "GIIT admissions support"].map((item) => <div key={item} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3.5 text-sm font-bold"><span className="grid h-7 w-7 place-items-center rounded-lg bg-[#f07822]"><Check size={15} /></span>{item}</div>)}</div><div className="mt-9 rounded-2xl bg-white/10 p-5"><p className="flex items-center gap-2 font-bold"><Phone size={18} className="text-[#ffad6b]" />Speak to admissions</p><p className="mt-3 text-sm leading-6 text-blue-100">09019776416<br />3, Awolowo Way, Ikeja, Lagos</p></div></aside>
+    <div className="flex min-h-[calc(100vh-76px)] flex-col bg-white"><div className="border-b px-5 py-5 sm:px-8"><div className="mx-auto flex max-w-4xl items-center justify-between"><div className="flex items-center gap-3"><span className="relative grid h-12 w-12 place-items-center rounded-2xl bg-blue-50 text-[#0c3f8f]"><Bot size={25} /><i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" /></span><div><h2 className="text-lg font-black">Ask Nia</h2><p className="text-sm text-slate-500">GIIT Africa admissions assistant</p></div></div><button onClick={onLead} className="hidden items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold sm:flex"><Users size={16} />Request a callback</button></div></div>
+      <div className="flex-1 overflow-y-auto px-5 py-7 sm:px-8"><div className="mx-auto max-w-4xl space-y-5">{messages.map((m, i) => <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3.5 text-[15px] leading-7 sm:max-w-[72%] ${m.role === "user" ? "rounded-br-md bg-[#0c3f8f] text-white" : "rounded-bl-md border bg-slate-50 text-slate-700"}`}><p className="whitespace-pre-line">{m.content}</p>{m.courses?.length ? <div className="mt-3 flex flex-wrap gap-2">{m.courses.map((c) => <span key={c} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#0c3f8f] shadow-sm">{c}</span>)}</div> : null}</div></div>)}{busy && <div className="w-fit animate-pulse rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-500">Nia is thinking…</div>}</div></div>
+      <div className="border-t px-5 pb-6 pt-4 sm:px-8"><div className="mx-auto max-w-4xl"><div className="mb-3 flex gap-2 overflow-x-auto pb-1">{starters.map((item) => <button key={item} onClick={() => send(item)} className="shrink-0 rounded-full border border-blue-100 bg-blue-50 px-3.5 py-2 text-xs font-bold text-[#0c3f8f]">{item}</button>)}</div><form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-end gap-2 rounded-2xl border border-slate-300 p-2 shadow-lg shadow-blue-950/5"><textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1} placeholder="Tell me your career goal or ask about a course…" className="min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] outline-none" /><button disabled={busy || !input.trim()} className="grid h-11 w-11 place-items-center rounded-xl bg-[#f07822] text-white disabled:opacity-40"><Send size={19} /></button></form><p className="mt-2 text-center text-[11px] text-slate-400">Course details are confirmed by an adviser before payment.</p></div></div>
+    </div>
+  </section>;
+}
+
+function Courses({ onAsk }: { onAsk: (course: string) => void }) { return <section className="mx-auto max-w-[1280px] px-5 py-12 lg:px-9"><p className="text-xs font-black uppercase tracking-[.18em] text-[#f07822]">Career-focused learning</p><h1 className="mt-3 max-w-2xl text-4xl font-black text-[#0b2f5b]">Choose a path. Build practical skills.</h1><div className="mt-9 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{courses.map((course) => <article key={course.name} className="rounded-3xl border bg-white p-6 shadow-sm hover:-translate-y-1 hover:shadow-xl"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-[#0c3f8f]"><GraduationCap /></span><h2 className="mt-5 text-xl font-black">{course.name}</h2><p className="mt-2 min-h-14 text-sm leading-6 text-slate-600">{course.summary}</p><div className="mt-4 flex flex-wrap gap-2">{course.skills.map((s) => <span key={s} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">{s}</span>)}</div><button onClick={() => onAsk(course.name)} className="mt-6 flex items-center gap-2 text-sm font-black text-[#0c3f8f]">Ask about this course <ArrowRight size={16} /></button></article>)}</div><div className="mt-12 grid gap-4 rounded-[28px] bg-[#0b2f5b] p-6 text-white lg:grid-cols-3 lg:p-9">{programmeLevels.map((l) => <div key={l.name} className="rounded-2xl border border-white/10 bg-white/5 p-5"><div className="flex justify-between"><h3 className="font-black">{l.name}</h3><span className="rounded-full bg-[#f07822] px-3 py-1 text-xs font-black">{l.duration}</span></div><p className="mt-4 text-2xl font-black">{l.fee}</p><p className="mt-2 text-sm leading-6 text-blue-100">{l.note}</p></div>)}</div></section>; }
+
+function BookingForm({ flash, onDone }: { flash: (v: string) => void; onDone: () => void }) {
+  async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const response = await fetch("/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))) }); if (response.ok) { flash("Counselling request received. Admissions will confirm your session."); onDone(); } else flash("We could not save your request. Please try again."); }
+  return <section className="mx-auto grid max-w-6xl gap-8 px-5 py-12 lg:grid-cols-[.8fr_1.2fr] lg:px-9"><div className="rounded-[30px] bg-[#0b2f5b] p-8 text-white"><CalendarDays size={32} className="text-[#ffad6b]" /><h1 className="mt-7 text-4xl font-black leading-tight">Plan your next step with an adviser.</h1><p className="mt-4 leading-7 text-blue-100">Compare courses, confirm fees and choose the right programme level.</p></div><form onSubmit={submit} className="rounded-[30px] border bg-white p-7 shadow-xl shadow-blue-950/5"><h2 className="text-2xl font-black">Request counselling</h2><div className="grid gap-x-5 sm:grid-cols-2"><Field label="Full name"><input name="name" required /></Field><Field label="Phone / WhatsApp"><input name="phone" required /></Field><Field label="Email"><input name="email" type="email" /></Field><Field label="Course"><select name="course" required defaultValue=""><option value="" disabled>Select a course</option>{courses.map((c) => <option key={c.name}>{c.name}</option>)}</select></Field><Field label="Preferred date"><input name="preferredDate" type="date" required /></Field><Field label="Preferred time"><select name="preferredTime" required defaultValue=""><option value="" disabled>Select time</option><option>10:00 AM</option><option>12:00 PM</option><option>2:00 PM</option><option>4:00 PM</option></select></Field></div><Field label="What would you like to discuss?"><textarea name="notes" rows={4} /></Field><button className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#f07822] px-5 py-3.5 font-black text-white">Request appointment <ArrowRight size={18} /></button></form></section>;
+}
+
+function Dashboard({ leads, bookings, reload, flash }: { leads: Lead[]; bookings: Booking[]; reload: () => void; flash: (v: string) => void }) {
+  async function upload(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const response = await fetch("/api/sources", { method: "POST", body: new FormData(e.currentTarget) }); if (response.ok) { flash("Training material added to the knowledge library."); e.currentTarget.reset(); } else flash("The file could not be uploaded yet."); }
+  return <section className="mx-auto max-w-[1360px] px-5 py-10 lg:px-9"><div className="flex justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-[#f07822]">Admissions operations</p><h1 className="mt-2 text-3xl font-black">Agent dashboard</h1></div><button onClick={reload} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">Refresh</button></div><div className="mt-7 grid gap-4 sm:grid-cols-3">{[["Total enquiries", leads.length], ["New leads", leads.filter((x) => x.status === "new").length], ["Bookings", bookings.length]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border bg-white p-5"><p className="text-sm font-bold text-slate-500">{label}</p><strong className="mt-3 block text-3xl">{value}</strong></div>)}</div><div className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.65fr]"><div className="space-y-6"><Panel title="Recent enquiries">{leads.length ? leads.map((lead) => <div key={lead.id} className="grid gap-1 border-b py-4 text-sm sm:grid-cols-4"><strong>{lead.name}</strong><span>{lead.interest || "General enquiry"}</span><span>{lead.phone}</span><span className="font-bold text-orange-700">{lead.status}</span></div>) : <p className="text-sm text-slate-500">No enquiries captured yet.</p>}</Panel><Panel title="Counselling requests">{bookings.length ? bookings.map((b) => <div key={b.id} className="grid gap-1 border-b py-4 text-sm sm:grid-cols-4"><strong>{b.name}</strong><span>{b.course}</span><span>{b.preferredDate}</span><span className="font-bold text-[#0c3f8f]">{b.status}</span></div>) : <p className="text-sm text-slate-500">No bookings yet.</p>}</Panel></div><aside className="rounded-2xl border bg-white p-6"><UploadCloud className="text-[#0c3f8f]" /><h2 className="mt-4 text-xl font-black">Knowledge library</h2><p className="mt-2 text-sm leading-6 text-slate-500">Upload course outlines, schedules, policies or training materials.</p><form onSubmit={upload} className="mt-5"><input className="block w-full rounded-xl border p-3 text-sm" type="file" name="file" accept=".pdf,.doc,.docx,.txt" required /><button className="mt-4 w-full rounded-xl bg-[#0c3f8f] px-4 py-3 text-sm font-black text-white">Upload material</button></form></aside></div></section>;
+}
+
+function LeadModal({ close, flash }: { close: () => void; flash: (v: string) => void }) {
+  async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const response = await fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))) }); if (response.ok) { flash("An adviser will contact you shortly."); close(); } else flash("We could not save your request."); }
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-[#071a30]/70 p-4 backdrop-blur-sm"><form onSubmit={submit} className="w-full max-w-lg rounded-[28px] bg-white p-7"><div className="flex justify-between"><div><h2 className="text-2xl font-black">Request a callback</h2><p className="mt-2 text-sm text-slate-500">An adviser will follow up with you.</p></div><button type="button" onClick={close}><X /></button></div><div className="grid gap-x-4 sm:grid-cols-2"><Field label="Full name"><input name="name" required /></Field><Field label="Phone / WhatsApp"><input name="phone" required /></Field><Field label="Email"><input name="email" type="email" /></Field><Field label="Course interest"><select name="interest"><option value="">Not sure yet</option>{courses.map((c) => <option key={c.name}>{c.name}</option>)}</select></Field></div><button className="mt-6 w-full rounded-xl bg-[#f07822] px-4 py-3.5 font-black text-white">Send my request</button></form></div>;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="mt-5 block text-sm font-bold">{label}<span className="mt-2 block [&_input]:w-full [&_input]:rounded-xl [&_input]:border [&_input]:px-3.5 [&_input]:py-3 [&_input]:font-normal [&_select]:w-full [&_select]:rounded-xl [&_select]:border [&_select]:bg-white [&_select]:px-3.5 [&_select]:py-3 [&_select]:font-normal [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:px-3.5 [&_textarea]:py-3 [&_textarea]:font-normal">{children}</span></label>; }
+function Panel({ title, children }: { title: string; children: ReactNode }) { return <section className="rounded-2xl border bg-white p-6"><h2 className="mb-3 font-black">{title}</h2>{children}</section>; }
