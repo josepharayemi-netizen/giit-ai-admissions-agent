@@ -41,7 +41,7 @@ export function AdmissionsApp() {
     if (a.ok) setLeads((await a.json()).leads ?? []);
     if (b.ok) setBookings((await b.json()).bookings ?? []);
   }
-  useEffect(() => { if (view === "dashboard") void loadDashboard(); }, [view]);
+  useEffect(() => {\n    if (view !== "dashboard") return;\n    const task = setTimeout(() => void loadDashboard(), 0);\n    return () => clearTimeout(task);\n  }, [view]);
   useEffect(() => {
     const context = (document as Document & { modelContext?: { registerTool: (tool: unknown, options?: { signal?: AbortSignal }) => void | Promise<void> } }).modelContext;
     if (!context?.registerTool) return;
