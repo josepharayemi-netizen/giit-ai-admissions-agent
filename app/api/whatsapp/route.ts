@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { answerUser } from "../../agent";
+import { answerUser } from "../../agent";\n\ntype WhatsAppWebhook = {\n  entry?: Array<{\n    changes?: Array<{\n      value?: { messages?: Array<{ from: string; text?: { body?: string } }> };\n    }>;\n  }>;\n};
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   return verified ? new Response(url.searchParams.get("hub.challenge") || "", { status: 200 }) : new Response("Forbidden", { status: 403 });
 }
 export async function POST(request: Request) {
-  const body = await request.json() as any;
+  const body = await request.json() as WhatsAppWebhook;
   const message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   if (!message?.text?.body) return Response.json({ received: true });
   const answer = await answerUser(message.text.body);
