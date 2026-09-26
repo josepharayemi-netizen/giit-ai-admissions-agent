@@ -1,5 +1,13 @@
 import { env } from "cloudflare:workers";
-import { answerUser } from "../../agent";\n\ntype WhatsAppWebhook = {\n  entry?: Array<{\n    changes?: Array<{\n      value?: { messages?: Array<{ from: string; text?: { body?: string } }> };\n    }>;\n  }>;\n};
+import { answerUser } from "../../agent";
+
+type WhatsAppWebhook = {
+  entry?: Array<{
+    changes?: Array<{
+      value?: { messages?: Array<{ from: string; text?: { body?: string } }> };
+    }>;
+  }>;
+};
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
